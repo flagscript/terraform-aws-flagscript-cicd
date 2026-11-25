@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/flagscript/terraform-aws-flagscript-cicd/compare/v1.0.0...v1.0.1) (2026-11-25)
+
+### Bug Fixes
+
+* tidy up kms policy ([f8baa1c](https://github.com/flagscript/terraform-aws-flagscript-cicd/commit/f8baa1c56b674a24a205ee39f7578c321d3f3cde))
+
 # 1.0.0 (2026-11-25)
 
 ### Features
