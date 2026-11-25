@@ -11,14 +11,17 @@ Remember to setup the repo for semantic-release.
 
 Terraform module that creates an S3 bucket for Terraform remote state in a CI/CD account, following reasonable AWS defaults. It can also keep a replicated backup bucket in a second region, and it creates an IAM policy that grants access to the state bucket(s).
 
-Pair it with the [github-oidc-role](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/modules/github-oidc-role) submodule to let GitHub Actions workflows assume a role that can read and write state, with no long-lived AWS keys.
+Two submodules round out a CI/CD account:
+
+- [cicd-kms](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/modules/cicd-kms) creates a multi-region KMS key to encrypt the state bucket(s) with.
+- [github-oidc-role](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/modules/github-oidc-role) lets GitHub Actions workflows assume a role that can read and write state, with no long-lived AWS keys.
 
 ## Features
 
 - **State bucket** in the S3 account-regional namespace, named `<state_bucket_prefix>-tfstate-<account_id>-<region>-an`.
 - **Versioning always on**, so every state write can be recovered.
 - **Locked down by default.** Public access is fully blocked, and the bucket policy denies requests that don't use TLS 1.2 or later.
-- **Encryption by default.** SSE-S3 is used unless you pass customer-managed KMS keys per region through `bucket_encryption_keys`. SSE-C is blocked.
+- **Encryption by default.** SSE-S3 is used unless you pass customer-managed KMS keys per region through `bucket_encryption_keys`, such as the `key_arns` output of the cicd-kms submodule. SSE-C is blocked.
 - **Optional backup region.** Set `secondary_region` to create a second bucket and replicate one way from the primary, including delete markers. Replication of KMS-encrypted objects is configured automatically.
 - **Access policy** (`<PrefixTitle>TfStateAccessPolicy`) that grants list, read, write and delete on the state bucket(s), plus KMS use when keys are set. This is everything the S3 backend needs, including S3-native state locking (`use_lockfile`).
 - **EventBridge notifications** are enabled on every bucket.
@@ -58,6 +61,35 @@ terraform {
 
 The bucket name is also in the `terraform_state_bucket_name` output, keyed by region (for example `module.cicd.terraform_state_bucket_name["us-east-1"]`).
 
+### Encrypting with KMS
+
+Use the cicd-kms submodule to create a multi-region key with a replica in the backup region, and pass its `key_arns` output to `bucket_encryption_keys`:
+
+```hcl
+module "state_key" {
+  source  = "flagscript/flagscript-cicd/aws//modules/cicd-kms"
+  version = "~> 1.0"
+
+  key_name            = "example-tfstate"
+  primary_region      = "us-east-1"
+  replica_regions     = ["us-west-2"]
+  enable_key_rotation = true
+}
+
+module "cicd" {
+  source  = "flagscript/flagscript-cicd/aws"
+  version = "~> 1.0"
+
+  primary_region      = "us-east-1"
+  secondary_region    = "us-west-2"
+  state_bucket_prefix = "example"
+
+  bucket_encryption_keys = module.state_key.key_arns
+}
+```
+
+Buckets encrypted with a KMS key don't need a `kms_key_id` in the backend block, because the bucket's default encryption applies.
+
 ### Granting access
 
 Attach the `terraform_state_bucket_access_policy_arn` output to the roles or users that run Terraform. With the github-oidc-role submodule:
@@ -82,18 +114,19 @@ module "github_role" {
 - **Renaming:** changing `state_bucket_prefix` or a region replaces the bucket(s). Buckets are created with `force_destroy = false`, so Terraform won't delete a bucket that still holds state. Move your state first.
 - **Same-account access:** the access policy is an identity policy, so it grants access to principals in the CI/CD account. Principals in other accounts would also need a bucket policy that allows them, which this module doesn't create.
 - **Backup bucket:** the secondary bucket is a disaster-recovery copy filled by replication. Keep backends pointed at the primary. Replication is asynchronous, and it only copies objects written **after** it's enabled. Use S3 Batch Replication to backfill a backup bucket added to an existing state bucket.
-- **KMS keys:** with a secondary region, `bucket_encryption_keys` must have keys for **both** regions or **neither** (enforced by validation). The secondary-region key re-encrypts replicas. Each key policy must let IAM policies in the account grant access (the default key policy does), because the module grants KMS use through IAM.
+- **KMS keys:** with a secondary region, `bucket_encryption_keys` must have keys for **both** regions or **neither** (enforced by validation). The secondary-region key re-encrypts replicas. Each key policy must let IAM policies in the account grant access, because the module grants KMS use through IAM. Both the default key policy and the cicd-kms submodule's key policy do.
 
 ## Submodules
 
+- [cicd-kms](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/modules/cicd-kms): customer-managed multi-region KMS key with replicas and a shared alias, whose `key_arns` output plugs into `bucket_encryption_keys`
 - [github-oidc-role](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/modules/github-oidc-role): IAM role that GitHub Actions workflows assume through the GitHub OIDC provider, limited to the repositories, branches or environments you list, with managed policies attached
 
 ## Examples
 
 - [basic](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/basic): single-region state bucket
 - [replicated](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/replicated): primary and backup state buckets with replication
-- [kms-replicated](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/kms-replicated): replication with customer-managed KMS keys in each region
-- [github-actions](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/github-actions): state bucket plus a GitHub Actions OIDC role that can use it
+- [kms-replicated](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/kms-replicated): replication with a multi-region KMS key from the cicd-kms submodule
+- [github-actions](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/github-actions): complete CI/CD account: KMS-encrypted, replicated state bucket plus a GitHub Actions OIDC role that can use it
 
 ## Requirements
 
