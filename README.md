@@ -5,3 +5,149 @@ Template directory for a new flagscript module. This will be replaced on run of 
 ## Prereqs
 
 Remember to setup the repo for semantic-release.
+
+<!-- BEGIN_TF_DOCS -->
+# terraform-aws-flagscript-cicd
+
+Terraform module that creates an S3 bucket for Terraform remote state in a CI/CD account, following reasonable AWS defaults. It can also keep a replicated backup bucket in a second region, and it creates an IAM policy that grants access to the state bucket(s).
+
+Pair it with the [github-oidc-role](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/modules/github-oidc-role) submodule to let GitHub Actions workflows assume a role that can read and write state, with no long-lived AWS keys.
+
+## Features
+
+- **State bucket** in the S3 account-regional namespace, named `<state_bucket_prefix>-tfstate-<account_id>-<region>-an`.
+- **Versioning always on**, so every state write can be recovered.
+- **Locked down by default.** Public access is fully blocked, and the bucket policy denies requests that don't use TLS 1.2 or later.
+- **Encryption by default.** SSE-S3 is used unless you pass customer-managed KMS keys per region through `bucket_encryption_keys`. SSE-C is blocked.
+- **Optional backup region.** Set `secondary_region` to create a second bucket and replicate one way from the primary, including delete markers. Replication of KMS-encrypted objects is configured automatically.
+- **Access policy** (`<PrefixTitle>TfStateAccessPolicy`) that grants list, read, write and delete on the state bucket(s), plus KMS use when keys are set. This is everything the S3 backend needs, including S3-native state locking (`use_lockfile`).
+- **EventBridge notifications** are enabled on every bucket.
+
+## Usage
+
+```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+
+module "cicd" {
+  source  = "flagscript/flagscript-cicd/aws"
+  version = "~> 1.0"
+
+  primary_region      = "us-east-1"
+  state_bucket_prefix = "example"
+
+  # Optional: replicated backup bucket in a second region
+  secondary_region = "us-west-2"
+}
+```
+
+Then point other configurations at the primary bucket:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket       = "example-tfstate-123456789012-us-east-1-an"
+    key          = "my-project/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}
+```
+
+The bucket name is also in the `terraform_state_bucket_name` output, keyed by region (for example `module.cicd.terraform_state_bucket_name["us-east-1"]`).
+
+### Granting access
+
+Attach the `terraform_state_bucket_access_policy_arn` output to the roles or users that run Terraform. With the github-oidc-role submodule:
+
+```hcl
+module "github_role" {
+  source  = "flagscript/flagscript-cicd/aws//modules/github-oidc-role"
+  version = "~> 1.0"
+
+  role_prefix             = "Example"
+  github_repository_paths = ["repo:example-org/example-repo:ref:refs/heads/main"]
+
+  managed_policy_arns_to_attach = [
+    module.cicd.terraform_state_bucket_access_policy_arn,
+  ]
+}
+```
+
+### Notes
+
+- **Naming:** `state_bucket_prefix` may contain only lowercase letters and hyphens, and must be at most 24 characters so bucket names stay within the 63-character S3 limit. It's also turned into a title-cased prefix for IAM names (for example `example-ci` becomes `ExampleCi`, giving `ExampleCiTfStateAccessPolicy`).
+- **Renaming:** changing `state_bucket_prefix` or a region replaces the bucket(s). Buckets are created with `force_destroy = false`, so Terraform won't delete a bucket that still holds state. Move your state first.
+- **Same-account access:** the access policy is an identity policy, so it grants access to principals in the CI/CD account. Principals in other accounts would also need a bucket policy that allows them, which this module doesn't create.
+- **Backup bucket:** the secondary bucket is a disaster-recovery copy filled by replication. Keep backends pointed at the primary. Replication is asynchronous, and it only copies objects written **after** it's enabled. Use S3 Batch Replication to backfill a backup bucket added to an existing state bucket.
+- **KMS keys:** with a secondary region, `bucket_encryption_keys` must have keys for **both** regions or **neither** (enforced by validation). The secondary-region key re-encrypts replicas. Each key policy must let IAM policies in the account grant access (the default key policy does), because the module grants KMS use through IAM.
+
+## Submodules
+
+- [github-oidc-role](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/modules/github-oidc-role): IAM role that GitHub Actions workflows assume through the GitHub OIDC provider, limited to the repositories, branches or environments you list, with managed policies attached
+
+## Examples
+
+- [basic](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/basic): single-region state bucket
+- [replicated](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/replicated): primary and backup state buckets with replication
+- [kms-replicated](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/kms-replicated): replication with customer-managed KMS keys in each region
+- [github-actions](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/github-actions): state bucket plus a GitHub Actions OIDC role that can use it
+
+## Requirements
+
+| Name | Version |
+| ---- | ------- |
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.16 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.72 |
+
+## Providers
+
+| Name | Version |
+| ---- | ------- |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 6.72 |
+
+## Resources
+
+| Name | Type |
+| ---- | ---- |
+| [aws_iam_policy.terraform_state_bucket_access_policy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_policy) | resource |
+| [aws_iam_role.terraform_state_replication_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
+| [aws_iam_role_policy.terraform_state_replication_policy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
+| [aws_s3_bucket.terraform_state_bucket](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket) | resource |
+| [aws_s3_bucket_notification.terraform_state_bucket_notifications](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_notification) | resource |
+| [aws_s3_bucket_policy.terraform_state_bucket_policy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_policy) | resource |
+| [aws_s3_bucket_public_access_block.terraform_state_bucket_public_access_block](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_public_access_block) | resource |
+| [aws_s3_bucket_replication_configuration.distribution_replication_primary_to_secondary](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_replication_configuration) | resource |
+| [aws_s3_bucket_server_side_encryption_configuration.terraform_state_bucket_encryption](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_server_side_encryption_configuration) | resource |
+| [aws_s3_bucket_versioning.terraform_state_bucket_versioning](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_versioning) | resource |
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+| ---- | ----------- | ---- | ------- | :------: |
+| <a name="input_primary_region"></a> [primary\_region](#input\_primary\_region) | The primary region for the terraform state bucket. | `string` | n/a | yes |
+| <a name="input_state_bucket_prefix"></a> [state\_bucket\_prefix](#input\_state\_bucket\_prefix) | The prefix for the account-regional terraform state bucket. | `string` | n/a | yes |
+| <a name="input_bucket_encryption_keys"></a> [bucket\_encryption\_keys](#input\_bucket\_encryption\_keys) | Optional KMS keys to use for S3 terraform state bucket encryption, keyed by deployment region. | `map(string)` | `{}` | no |
+| <a name="input_secondary_region"></a> [secondary\_region](#input\_secondary\_region) | The secondary region for the terraform state bucket. | `string` | `null` | no |
+| <a name="input_tags"></a> [tags](#input\_tags) | Additional tags to merge into module tags. | `map(string)` | `{}` | no |
+
+## Outputs
+
+| Name | Description |
+| ---- | ----------- |
+| <a name="output_terraform_state_bucket_access_policy_arn"></a> [terraform\_state\_bucket\_access\_policy\_arn](#output\_terraform\_state\_bucket\_access\_policy\_arn) | The ARN of the policy that allows access to the terraform state bucket. |
+| <a name="output_terraform_state_bucket_arn"></a> [terraform\_state\_bucket\_arn](#output\_terraform\_state\_bucket\_arn) | Regional map of ARN for the S3 bucket. |
+| <a name="output_terraform_state_bucket_name"></a> [terraform\_state\_bucket\_name](#output\_terraform\_state\_bucket\_name) | Regional map of name for the S3 bucket. |
+
+## Contributing
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/), which commitlint enforces through lefthook. Releases and the changelog are generated by semantic-release when changes merge to `main`.
+
+The documentation tables above are generated by [terraform-docs](https://terraform-docs.io/) on pre-commit. To change the surrounding text, edit `docs/header.md` or `docs/footer.md` (or `modules/<name>/docs/header.md` for a submodule), not this README.
+
+## License
+
+MIT licensed. See [LICENSE](https://github.com/flagscript/terraform-aws-flagscript-cicd/blob/main/LICENSE).
+<!-- END_TF_DOCS -->
