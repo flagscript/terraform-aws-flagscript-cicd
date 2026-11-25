@@ -1,22 +1,23 @@
 /**
  * # KMS replicated example
  *
- * A primary state bucket in `us-east-1` and a backup bucket in `us-west-2`, where each
- * bucket is encrypted with a customer-managed KMS key in its own region.
+ * A primary state bucket in `us-east-1` and a backup bucket in `us-west-2`, encrypted with
+ * a multi-region KMS key from the cicd-kms submodule.
  *
- * Passing `bucket_encryption_keys` makes the module:
+ * The cicd-kms submodule creates the primary key in `us-east-1`, a replica in `us-west-2`,
+ * and the alias `alias/example-tfstate` in both regions. Its `key_arns` output is passed
+ * straight to `bucket_encryption_keys`, which makes the root module:
  *
  * - set SSE-KMS (with an S3 bucket key) as the default encryption on each bucket
  * - opt the replication rule in to SSE-KMS objects and re-encrypt replicas with the
- *   backup-region key
+ *   `us-west-2` replica key
  * - grant the replication role `kms:Decrypt` on the primary key and `kms:Encrypt` /
- *   `kms:GenerateDataKey` on the backup key, scoped to S3 and these buckets
+ *   `kms:GenerateDataKey` on the replica key, scoped to S3 and these buckets
  * - add `kms:Decrypt`, `kms:DescribeKey` and `kms:GenerateDataKey` on both keys to the
  *   state access policy
  *
- * The module grants KMS use through IAM policies, so each key policy must let IAM policies
- * in the account grant access. This example's key policy does that with the standard
- * account-root statement.
+ * The cicd-kms key policy lets IAM policies in the account grant use of the key, which is
+ * what the root module relies on.
  *
  * ```bash
  * terraform init
@@ -33,30 +34,18 @@ locals {
   secondary_region = "us-west-2"
 }
 
-data "aws_caller_identity" "current" {}
+module "state_key" {
+  source  = "flagscript/flagscript-cicd/aws//modules/cicd-kms"
+  version = "~> 1.0"
 
-data "aws_partition" "current" {}
-
-# Key policy: let IAM policies in this account grant use of the key.
-data "aws_iam_policy_document" "state_key_policy" {
-  statement {
-    sid       = "EnableAccountAdministration"
-    actions   = ["kms:*"]
-    resources = ["*"]
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:root"]
-    }
-  }
-}
-
-resource "aws_kms_key" "state" {
-  for_each = toset([local.primary_region, local.secondary_region])
-  region   = each.key
-
-  description         = "Terraform state encryption key (${each.key})"
+  key_name            = "example-tfstate"
+  primary_region      = local.primary_region
+  replica_regions     = [local.secondary_region]
   enable_key_rotation = true
-  policy              = data.aws_iam_policy_document.state_key_policy.json
+
+  tags = {
+    Environment = "example"
+  }
 }
 
 module "cicd" {
@@ -67,9 +56,7 @@ module "cicd" {
   secondary_region    = local.secondary_region
   state_bucket_prefix = "example"
 
-  bucket_encryption_keys = {
-    for region, key in aws_kms_key.state : region => key.arn
-  }
+  bucket_encryption_keys = module.state_key.key_arns
 
   tags = {
     Environment = "example"

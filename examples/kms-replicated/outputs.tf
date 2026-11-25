@@ -1,3 +1,8 @@
+output "key_arns" {
+  description = "Regional map of KMS key ARNs used to encrypt the state buckets."
+  value       = module.state_key.key_arns
+}
+
 output "terraform_state_bucket_name" {
   description = "Regional map of Terraform state bucket names."
   value       = module.cicd.terraform_state_bucket_name

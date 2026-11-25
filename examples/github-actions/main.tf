@@ -1,15 +1,18 @@
 /**
  * # GitHub Actions example
  *
- * A complete CI/CD account setup: a replicated Terraform state bucket, and an IAM role that
- * GitHub Actions workflows assume through OIDC to read and write that state.
+ * A complete CI/CD account setup: a KMS-encrypted, replicated Terraform state bucket, and an
+ * IAM role that GitHub Actions workflows assume through OIDC to read and write that state.
  *
  * This example:
  *
  * - creates the GitHub OIDC identity provider for `token.actions.githubusercontent.com`.
  *   An account can have only one per URL, so remove this resource if your account already
  *   has it.
- * - creates the state bucket(s) and access policy with the root module
+ * - creates a multi-region KMS key in `us-east-1` with a replica in `us-west-2`, using the
+ *   cicd-kms submodule
+ * - creates the state buckets, encrypted with that key, and the access policy with the
+ *   root module. The access policy includes the KMS permissions the role needs.
  * - creates `ExampleGithubOidcRole` with the github-oidc-role submodule, trusted by the
  *   `main` branch and the `production` environment of one repository, and attaches the
  *   state access policy to it
@@ -51,13 +54,34 @@ resource "aws_iam_openid_connect_provider" "github" {
   client_id_list = ["sts.amazonaws.com"]
 }
 
+locals {
+  primary_region   = "us-east-1"
+  secondary_region = "us-west-2"
+}
+
+module "state_key" {
+  source  = "flagscript/flagscript-cicd/aws//modules/cicd-kms"
+  version = "~> 1.0"
+
+  key_name            = "example-tfstate"
+  primary_region      = local.primary_region
+  replica_regions     = [local.secondary_region]
+  enable_key_rotation = true
+
+  tags = {
+    Environment = "example"
+  }
+}
+
 module "cicd" {
   source  = "flagscript/flagscript-cicd/aws"
   version = "~> 1.0"
 
-  primary_region      = "us-east-1"
-  secondary_region    = "us-west-2"
+  primary_region      = local.primary_region
+  secondary_region    = local.secondary_region
   state_bucket_prefix = "example"
+
+  bucket_encryption_keys = module.state_key.key_arns
 
   tags = {
     Environment = "example"

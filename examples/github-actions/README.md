@@ -1,15 +1,18 @@
 <!-- BEGIN_TF_DOCS -->
 # GitHub Actions example
 
-A complete CI/CD account setup: a replicated Terraform state bucket, and an IAM role that
-GitHub Actions workflows assume through OIDC to read and write that state.
+A complete CI/CD account setup: a KMS-encrypted, replicated Terraform state bucket, and an
+IAM role that GitHub Actions workflows assume through OIDC to read and write that state.
 
 This example:
 
 - creates the GitHub OIDC identity provider for `token.actions.githubusercontent.com`.
   An account can have only one per URL, so remove this resource if your account already
   has it.
-- creates the state bucket(s) and access policy with the root module
+- creates a multi-region KMS key in `us-east-1` with a replica in `us-west-2`, using the
+  cicd-kms submodule
+- creates the state buckets, encrypted with that key, and the access policy with the
+  root module. The access policy includes the KMS permissions the role needs.
 - creates `ExampleGithubOidcRole` with the github-oidc-role submodule, trusted by the
   `main` branch and the `production` environment of one repository, and attaches the
   state access policy to it
@@ -59,6 +62,7 @@ jobs:
 | ---- | ------ | ------- |
 | <a name="module_cicd"></a> [cicd](#module\_cicd) | flagscript/flagscript-cicd/aws | ~> 1.0 |
 | <a name="module_github_role"></a> [github\_role](#module\_github\_role) | flagscript/flagscript-cicd/aws//modules/github-oidc-role | ~> 1.0 |
+| <a name="module_state_key"></a> [state\_key](#module\_state\_key) | flagscript/flagscript-cicd/aws//modules/cicd-kms | ~> 1.0 |
 
 ## Resources
 
