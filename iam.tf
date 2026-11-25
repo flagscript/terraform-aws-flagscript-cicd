@@ -1,4 +1,5 @@
 data "aws_iam_policy_document" "terraform_state_bucket_access_policy_document" {
+  # Allow access to the terraform state bucket and its objects
   statement {
     actions = [
       "s3:ListBucket",
@@ -8,6 +9,7 @@ data "aws_iam_policy_document" "terraform_state_bucket_access_policy_document" {
     sid       = "AllowTerraformStateBucketList"
   }
 
+  # Allow access to the terraform state bucket objects
   statement {
     actions = [
       "s3:DeleteObject",
@@ -25,13 +27,40 @@ data "aws_iam_policy_document" "terraform_state_bucket_access_policy_document" {
     for_each = length(var.bucket_encryption_keys) > 0 ? [true] : []
     content {
       actions = [
-        "kms:Decrypt",
         "kms:DescribeKey",
-        "kms:GenerateDataKey",
       ]
       effect    = "Allow"
       resources = values(var.bucket_encryption_keys)
-      sid       = "AllowTerraformStateBucketKMSAccess"
+      sid       = "TfStateKmsDescribe"
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.bucket_encryption_keys) > 0 ? [true] : []
+    content {
+      actions = [
+        "kms:Decrypt",
+        "kms:Encrypt",
+        "kms:GenerateDataKey*",
+        "kms:ReEncrypt*",
+      ]
+      effect    = "Allow"
+      resources = values(var.bucket_encryption_keys)
+      sid       = "TfStateKmsViaS3"
+
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = formatlist("s3.%s.amazonaws.com", keys(var.bucket_encryption_keys))
+      }
+
+      condition {
+        test     = "StringLike"
+        variable = "kms:EncryptionContext:aws:s3:arn"
+        values = flatten([
+          for bucket in aws_s3_bucket.terraform_state_bucket : [bucket.arn, "${bucket.arn}/*"]
+        ])
+      }
     }
   }
 }
