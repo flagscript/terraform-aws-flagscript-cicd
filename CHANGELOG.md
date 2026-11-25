@@ -1,3 +1,9 @@
+# [1.1.0](https://github.com/flagscript/terraform-aws-flagscript-cicd/compare/v1.0.1...v1.1.0) (2026-11-25)
+
+### Features
+
+* add cicd kms module ([86106ca](https://github.com/flagscript/terraform-aws-flagscript-cicd/commit/86106cac351b151759e0772b31b3558e49bcbdc4))
+
 ## [1.0.1](https://github.com/flagscript/terraform-aws-flagscript-cicd/compare/v1.0.0...v1.0.1) (2026-11-25)
 
 ### Bug Fixes
