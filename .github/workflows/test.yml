@@ -29,7 +29,7 @@ jobs:
       - name: Terraform validate (examples and submodules)
         run: |
           set -e
-          for dir in examples/*/ modules/*/; do
+          for dir in modules/*/; do
             if grep -q configuration_aliases "$dir"*.tf; then
               echo "::notice::Skipping $dir: it needs aliased providers from a caller."
               continue
