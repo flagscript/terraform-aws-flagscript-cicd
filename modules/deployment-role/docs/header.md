@@ -5,7 +5,8 @@ Submodule that creates an IAM role in a workload account for CI/CD to deploy wit
 ## Features
 
 - **IAM role** named `<role_prefix>DeploymentRole`, trusted only by the role ARNs in `trusted_assume_role_arns`.
-- **Session tags allowed.** The trust policy allows `sts:TagSession` as well as `sts:AssumeRole`, so callers that tag their sessions, such as `aws-actions/configure-aws-credentials` with `role-chaining: true`, work without extra settings.
+- **Same organization only.** The trust policy also requires `aws:PrincipalOrgID` to match the workload account's AWS Organization, so only callers from accounts in that organization can assume the role.
+- **Session tags and source identity allowed.** The trust policy allows `sts:TagSession` and `sts:SetSourceIdentity` as well as `sts:AssumeRole`, so callers that tag their sessions, such as `aws-actions/configure-aws-credentials` with `role-chaining: true`, or that set a source identity, such as a Terraform provider `assume_role` block with `source_identity`, work without extra settings.
 - **Managed policies** from `managed_policy_arns` are attached to the role, up to 10 (the default IAM quota per role).
 - **Optional inline policy** from `inline_policy_json_document`, for permissions that only this role needs.
 - **Optional permissions boundary**, looked up by name with `permissions_boundary_policy_name`, to cap what the role can do whatever policies it has.
@@ -94,10 +95,11 @@ Each attachment is tied to its name, so adding or removing one policy leaves the
 
 ### Notes
 
+- **Organizations required:** the workload account must belong to an AWS Organization, and so must the accounts of the trusted roles (the same one). The submodule reads the organization ID with `organizations:DescribeOrganization`, which works from member accounts, so whoever applies it in the workload account needs that permission. `PowerUserAccess` includes it.
 - **Order across separate configurations:** IAM checks that a trust policy's principals exist when the policy is saved. If each account has its own configuration, apply the CI/CD role first, then this role, then add this role's ARN to `allowed_assume_role_arns` and apply the CI/CD role again.
 - **Recreated CI/CD role:** if a trusted role is deleted and recreated, even with the same name, this role's trust policy stops matching it. IAM shows the old role's internal ID in place of the ARN. Apply this submodule again to fix it.
 - **Session length:** sessions from role chaining are limited to one hour, whatever the role's maximum session duration is.
 - **Transitive tags:** if a workflow passes `transitive-tag-keys` to `configure-aws-credentials`, every later role in the chain must set `role-skip-session-tagging: true`.
 - **Naming:** `role_prefix` may contain only letters. Changing it replaces the role, so update `allowed_assume_role_arns` and your workflows too.
 - **Policy limits:** at most 10 managed policies can be attached (enforced by validation). Inline policies on a role are limited to 10,240 characters in total.
-- **Permissions boundary:** the policy named in `permissions_boundary_policy_name` must already exist in the workload account. The role's effective permissions are what both its policies and the boundary allow.
+- **Permissions boundary:** the policy named in `permissions_boundary_policy_name` must already exist in the workload account. The role's effective permissions are what both its policies and the boundary allow. If this role's pipelines apply Terraform that manages IAM roles (including this submodule or github-oidc-role), the boundary and its policies must allow those IAM actions.
