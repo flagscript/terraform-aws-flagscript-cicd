@@ -1,4 +1,6 @@
 locals {
+  # Aws
+  organization_id = data.aws_organizations_organization.organization.id
   # Resources
   use_permissions_boundary = var.permissions_boundary_policy_name != null
   # Tags
