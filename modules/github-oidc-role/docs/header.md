@@ -10,6 +10,7 @@ It's meant to run in the same CI/CD account as the [root module](https://github.
 - **Scoped trust.** The trust policy requires the `sts.amazonaws.com` audience, and matches the token's `sub` claim against the patterns in `github_repository_paths`.
 - **Managed policies** from `managed_policy_arns` are attached to the role, up to 10 (the default IAM quota per role).
 - **Role chaining** (optional). Roles listed in `allowed_assume_role_arns`, such as deployment roles in workload accounts, can be assumed with `sts:AssumeRole` and `sts:TagSession`.
+- **Optional permissions boundary**, looked up by name with `permissions_boundary_policy_name`, to cap what the role can do whatever policies it has.
 
 ## Prerequisites
 
@@ -116,4 +117,5 @@ The two modules refer to each other's outputs, but there's no dependency cycle: 
 - **Keep patterns narrow.** A pattern like `repo:example-org/*` lets every repository in the organization assume the role, and `*` on its own lets any GitHub repository do so. Prefer specific branches or environments for roles that can change infrastructure.
 - **Naming:** `role_prefix` may contain only letters. Changing it replaces the role, so update `role-to-assume` in your workflows too.
 - **Assumable roles:** each entry in `allowed_assume_role_arns` must be an IAM role ARN with a 12-digit account ID (enforced by validation). A name wildcard such as `role/Deploy*` passes validation and works in IAM, but listing each role keeps the permission narrow.
+- **Permissions boundary:** the policy named in `permissions_boundary_policy_name` must already exist in the CI/CD account. The role's effective permissions are only what both its policies and the boundary allow, so the boundary must also allow the S3 and KMS actions for state and `sts:AssumeRole` / `sts:TagSession` on your deployment roles. Otherwise the role loses access to state or can't chain to deployment roles, even though its own policies allow it.
 - **Policy limit:** at most 10 managed policies can be attached (enforced by validation). Request an IAM quota increase if you need more, or combine permissions into fewer policies.

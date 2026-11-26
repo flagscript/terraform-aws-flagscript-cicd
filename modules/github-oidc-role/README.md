@@ -11,6 +11,7 @@ It's meant to run in the same CI/CD account as the [root module](https://github.
 - **Scoped trust.** The trust policy requires the `sts.amazonaws.com` audience, and matches the token's `sub` claim against the patterns in `github_repository_paths`.
 - **Managed policies** from `managed_policy_arns` are attached to the role, up to 10 (the default IAM quota per role).
 - **Role chaining** (optional). Roles listed in `allowed_assume_role_arns`, such as deployment roles in workload accounts, can be assumed with `sts:AssumeRole` and `sts:TagSession`.
+- **Optional permissions boundary**, looked up by name with `permissions_boundary_policy_name`, to cap what the role can do whatever policies it has.
 
 ## Prerequisites
 
@@ -117,6 +118,7 @@ The two modules refer to each other's outputs, but there's no dependency cycle: 
 - **Keep patterns narrow.** A pattern like `repo:example-org/*` lets every repository in the organization assume the role, and `*` on its own lets any GitHub repository do so. Prefer specific branches or environments for roles that can change infrastructure.
 - **Naming:** `role_prefix` may contain only letters. Changing it replaces the role, so update `role-to-assume` in your workflows too.
 - **Assumable roles:** each entry in `allowed_assume_role_arns` must be an IAM role ARN with a 12-digit account ID (enforced by validation). A name wildcard such as `role/Deploy*` passes validation and works in IAM, but listing each role keeps the permission narrow.
+- **Permissions boundary:** the policy named in `permissions_boundary_policy_name` must already exist in the CI/CD account. The role's effective permissions are only what both its policies and the boundary allow, so the boundary must also allow the S3 and KMS actions for state and `sts:AssumeRole` / `sts:TagSession` on your deployment roles. Otherwise the role loses access to state or can't chain to deployment roles, even though its own policies allow it.
 - **Policy limit:** at most 10 managed policies can be attached (enforced by validation). Request an IAM quota increase if you need more, or combine permissions into fewer policies.
 
 ## Requirements
@@ -148,6 +150,7 @@ The two modules refer to each other's outputs, but there's no dependency cycle: 
 | <a name="input_role_prefix"></a> [role\_prefix](#input\_role\_prefix) | The prefix for the role name. | `string` | n/a | yes |
 | <a name="input_allowed_assume_role_arns"></a> [allowed\_assume\_role\_arns](#input\_allowed\_assume\_role\_arns) | Optional list of ARNs of IAM roles this role is allowed to assume. | `list(string)` | `[]` | no |
 | <a name="input_managed_policy_arns"></a> [managed\_policy\_arns](#input\_managed\_policy\_arns) | Optional map of managed policy ARNs to attach to the GitHub OIDC role. Keys are names you choose and must be known at plan time; values are the policy ARNs. | `map(string)` | `{}` | no |
+| <a name="input_permissions_boundary_policy_name"></a> [permissions\_boundary\_policy\_name](#input\_permissions\_boundary\_policy\_name) | Optional name of the permissions boundary policy to attach to the GitHub OIDC role. | `string` | `null` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Additional tags to merge into module tags. | `map(string)` | `{}` | no |
 
 ## Outputs
