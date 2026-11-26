@@ -37,7 +37,7 @@ resource "aws_iam_role" "github_oidc_role" {
 
 # Attach additional policies to the role
 resource "aws_iam_role_policy_attachment" "github_oidc_role_policy_attachment" {
-  for_each   = toset(var.managed_policy_arns_to_attach)
+  for_each   = var.managed_policy_arns
   role       = aws_iam_role.github_oidc_role.name
-  policy_arn = each.key
+  policy_arn = each.value
 }

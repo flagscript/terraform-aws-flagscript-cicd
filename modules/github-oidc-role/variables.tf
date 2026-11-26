@@ -17,17 +17,33 @@ variable "role_prefix" {
 
 # OPTIONAL PARAMETERS
 # These parameters have reasonable defaults.
-variable "managed_policy_arns_to_attach" {
+variable "allowed_assume_role_arns" {
   default     = []
-  description = "Optional list of managed policy ARNs to attach to the GitHub OIDC role."
+  description = "Optional list of ARNs of IAM roles this role is allowed to assume."
   type        = list(string)
 
   validation {
-    condition     = length(var.managed_policy_arns_to_attach) <= 10
-    error_message = "No more than 10 managed policy ARNs may be attached to the GitHub OIDC role."
+    condition     = alltrue([for arn in var.allowed_assume_role_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+$", arn))])
+    error_message = "All allowed assume role ARNs must be valid IAM role ARNs."
+  }
+}
+
+variable "managed_policy_arns" {
+  default     = {}
+  description = "Optional map of managed policy ARNs to attach to the GitHub OIDC role. Keys are names you choose and must be known at plan time; values are the policy ARNs."
+  type        = map(string)
+
+  validation {
+    condition     = alltrue([for arn in values(var.managed_policy_arns) : can(regex("^arn:aws[a-z-]*:iam::([0-9]{12}|aws):policy/.+$", arn))])
+    error_message = "All managed policy ARNs must be valid IAM policy ARNs."
   }
 
+  validation {
+    condition     = length(var.managed_policy_arns) <= 10
+    error_message = "No more than 10 managed policies may be attached to the GitHub OIDC role."
+  }
 }
+
 variable "tags" {
   default     = {}
   description = "Additional tags to merge into module tags."
