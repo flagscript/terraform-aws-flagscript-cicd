@@ -1,3 +1,15 @@
+# [2.0.0](https://github.com/flagscript/terraform-aws-flagscript-cicd/compare/v1.1.0...v2.0.0) (2026-11-26)
+
+### Features
+
+* add deployment-role module for workload accounts to be assumed ([564728f](https://github.com/flagscript/terraform-aws-flagscript-cicd/commit/564728f7350baf918870776639fb645e7b60a674))
+* add optional permissions boundary to github oidc role ([2fa8478](https://github.com/flagscript/terraform-aws-flagscript-cicd/commit/2fa8478d4cc6a3e2fe734d45d23fae614071bbaa))
+* adjust attached modules to ensure deploys complete ([c122e2b](https://github.com/flagscript/terraform-aws-flagscript-cicd/commit/c122e2b298fd60a4bc201c7082c95f0eb921fb01))
+
+### BREAKING CHANGES
+
+* modified exsting parameter
+
 # [1.1.0](https://github.com/flagscript/terraform-aws-flagscript-cicd/compare/v1.0.1...v1.1.0) (2026-11-25)
 
 ### Features
