@@ -104,7 +104,7 @@ module "github_role" {
 
 ### Deploying to workload accounts
 
-Keep state and the GitHub Actions role in the CI/CD account, and give each workload account a deployment role the GitHub Actions role can assume. The deployment-role submodule trusts the CI/CD role, and github-oidc-role's `allowed_assume_role_arns` lets the CI/CD role assume it:
+Keep state and the GitHub Actions role in the CI/CD account, and give each workload account a deployment role the GitHub Actions role can assume. The deployment-role submodule trusts the CI/CD role, and github-oidc-role's `allowed_assume_role_arns` lets the CI/CD role assume it. The CI/CD and workload accounts must be in the same AWS Organization:
 
 ```hcl
 module "github_role" {

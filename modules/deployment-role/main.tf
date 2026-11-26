@@ -3,9 +3,16 @@ data "aws_iam_policy_document" "deployment_role_assume_role_policy_document" {
   statement {
     actions = [
       "sts:AssumeRole",
+      "sts:SetSourceIdentity",
       "sts:TagSession",
     ]
     effect = "Allow"
+
+    condition {
+      test     = "StringEquals"
+      values   = [local.organization_id]
+      variable = "aws:PrincipalOrgID"
+    }
 
     principals {
       type        = "AWS"
