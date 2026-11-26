@@ -101,9 +101,9 @@ module "github_role" {
     "repo:example-org/infrastructure:environment:production",
   ]
 
-  managed_policy_arns_to_attach = [
-    module.cicd.terraform_state_bucket_access_policy_arn,
-  ]
+  managed_policy_arns = {
+    tfstate = module.cicd.terraform_state_bucket_access_policy_arn
+  }
 
   tags = {
     Environment = "example"
