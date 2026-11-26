@@ -1,14 +1,16 @@
 # github-oidc-role
 
-Submodule that creates an IAM role GitHub Actions workflows can assume through the GitHub OIDC identity provider, with no long-lived AWS access keys. You choose which repositories, branches, environments or events may assume it, and which managed policies it gets.
+Submodule that creates an IAM role GitHub Actions workflows can assume through the GitHub OIDC identity provider, with no long-lived AWS access keys. You choose which repositories, branches, environments or events may assume it, which managed policies it gets, and which roles in other accounts it may assume.
 
-It's meant to run in the same CI/CD account as the [root module](https://github.com/flagscript/terraform-aws-flagscript-cicd), whose state access policy you can attach to this role.
+It's meant to run in the same CI/CD account as the [root module](https://github.com/flagscript/terraform-aws-flagscript-cicd), whose state access policy you can attach to this role. To deploy into workload accounts, pair it with the [deployment-role](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/modules/deployment-role) submodule.
 
 ## Features
 
 - **IAM role** named `<role_prefix>GithubOidcRole`, trusted only by the account's GitHub OIDC provider (`token.actions.githubusercontent.com`).
 - **Scoped trust.** The trust policy requires the `sts.amazonaws.com` audience, and matches the token's `sub` claim against the patterns in `github_repository_paths`.
-- **Managed policies** from `managed_policy_arns_to_attach` are attached to the role, up to 10 (the default IAM quota per role).
+- **Managed policies** from `managed_policy_arns` are attached to the role, up to 10 (the default IAM quota per role).
+- **Role chaining** (optional). Roles listed in `allowed_assume_role_arns`, such as deployment roles in workload accounts, can be assumed with `sts:AssumeRole` and `sts:TagSession`.
+- **Optional permissions boundary**, looked up by name with `permissions_boundary_policy_name`, to cap what the role can do whatever policies it has.
 
 ## Prerequisites
 
@@ -28,9 +30,9 @@ module "github_role" {
     "repo:example-org/infrastructure:environment:production",
   ]
 
-  managed_policy_arns_to_attach = [
-    "arn:aws:iam::123456789012:policy/ExampleTfStateAccessPolicy",
-  ]
+  managed_policy_arns = {
+    tfstate = "arn:aws:iam::123456789012:policy/ExampleTfStateAccessPolicy"
+  }
 }
 ```
 
@@ -68,8 +70,52 @@ Each entry in `github_repository_paths` is matched against the token's `sub` cla
 
 When a job uses an environment, the claim is `environment:<name>`, not the branch. Allow that pattern if your jobs use environments.
 
+### Managed policies
+
+`managed_policy_arns` is a map of names you choose to policy ARNs. The names must be known at plan time, but the ARNs don't need to be, so you can pass a policy created in the same configuration, such as the root module's state access policy:
+
+```hcl
+managed_policy_arns = {
+  tfstate = module.cicd.terraform_state_bucket_access_policy_arn
+}
+```
+
+Each attachment is tied to its name, so adding or removing one policy leaves the others alone.
+
+### Assuming deployment roles
+
+To let workflows deploy into other accounts, list the roles there in `allowed_assume_role_arns`. Those roles must also trust this one, which the deployment-role submodule does through `trusted_assume_role_arns`:
+
+```hcl
+module "github_role" {
+  source  = "flagscript/flagscript-cicd/aws//modules/github-oidc-role"
+  version = "~> 1.0"
+
+  role_prefix             = "Example"
+  github_repository_paths = ["repo:example-org/app:ref:refs/heads/main"]
+
+  allowed_assume_role_arns = [module.deployment_role.deployment_role_arn]
+}
+
+module "deployment_role" {
+  source  = "flagscript/flagscript-cicd/aws//modules/deployment-role"
+  version = "~> 1.0"
+
+  providers = {
+    aws = aws.workload
+  }
+
+  role_prefix              = "Example"
+  trusted_assume_role_arns = [module.github_role.github_oidc_role_arn]
+}
+```
+
+The two modules refer to each other's outputs, but there's no dependency cycle: Terraform creates this role, then the deployment role, then the policy that lets this role assume it. A workflow then chains from this role to the deployment role with `role-chaining: true`. See the [cross-account](https://github.com/flagscript/terraform-aws-flagscript-cicd/tree/main/examples/cross-account) example.
+
 ### Notes
 
 - **Keep patterns narrow.** A pattern like `repo:example-org/*` lets every repository in the organization assume the role, and `*` on its own lets any GitHub repository do so. Prefer specific branches or environments for roles that can change infrastructure.
 - **Naming:** `role_prefix` may contain only letters. Changing it replaces the role, so update `role-to-assume` in your workflows too.
+- **Assumable roles:** each entry in `allowed_assume_role_arns` must be an IAM role ARN with a 12-digit account ID (enforced by validation). A name wildcard such as `role/Deploy*` passes validation and works in IAM, but listing each role keeps the permission narrow.
+- **Permissions boundary:** the policy named in `permissions_boundary_policy_name` must already exist in the CI/CD account. The role's effective permissions are only what both its policies and the boundary allow, so the boundary must also allow the S3 and KMS actions for state and `sts:AssumeRole` / `sts:TagSession` on your deployment roles. Otherwise the role loses access to state or can't chain to deployment roles, even though its own policies allow it.
 - **Policy limit:** at most 10 managed policies can be attached (enforced by validation). Request an IAM quota increase if you need more, or combine permissions into fewer policies.

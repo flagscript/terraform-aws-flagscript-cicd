@@ -24,9 +24,10 @@ data "aws_iam_policy_document" "github_oidc_assume_role_policy_document" {
 }
 
 resource "aws_iam_role" "github_oidc_role" {
-  assume_role_policy = data.aws_iam_policy_document.github_oidc_assume_role_policy_document.json
-  description        = "${var.role_prefix} IAM role for GitHub OIDC authentication to AWS."
-  name               = "${var.role_prefix}GithubOidcRole"
+  assume_role_policy   = data.aws_iam_policy_document.github_oidc_assume_role_policy_document.json
+  description          = "${var.role_prefix} IAM role for GitHub OIDC authentication to AWS."
+  name                 = "${var.role_prefix}GithubOidcRole"
+  permissions_boundary = local.use_permissions_boundary ? data.aws_iam_policy.permissions_boundary_policy[0].arn : null
   tags = merge(
     local.common_tags,
     {
@@ -37,7 +38,7 @@ resource "aws_iam_role" "github_oidc_role" {
 
 # Attach additional policies to the role
 resource "aws_iam_role_policy_attachment" "github_oidc_role_policy_attachment" {
-  for_each   = toset(var.managed_policy_arns_to_attach)
+  for_each   = var.managed_policy_arns
   role       = aws_iam_role.github_oidc_role.name
-  policy_arn = each.key
+  policy_arn = each.value
 }
