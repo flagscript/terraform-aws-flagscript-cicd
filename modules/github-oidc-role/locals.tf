@@ -1,6 +1,7 @@
 locals {
   # Resources
   create_assume_role_policy = length(var.allowed_assume_role_arns) > 0
+  use_permissions_boundary  = var.permissions_boundary_policy_name != null
   # Tags
   common_tags = merge(
     {

@@ -44,6 +44,12 @@ variable "managed_policy_arns" {
   }
 }
 
+variable "permissions_boundary_policy_name" {
+  default     = null
+  description = "Optional name of the permissions boundary policy to attach to the GitHub OIDC role."
+  type        = string
+}
+
 variable "tags" {
   default     = {}
   description = "Additional tags to merge into module tags."
