@@ -1,3 +1,9 @@
+## [2.0.1](https://github.com/flagscript/terraform-aws-flagscript-cicd/compare/v2.0.0...v2.0.1) (2026-11-26)
+
+### Bug Fixes
+
+* github assume role fixes and tightening ([4273dc0](https://github.com/flagscript/terraform-aws-flagscript-cicd/commit/4273dc0a0279d1c0153267c541351e9e8d4a299d))
+
 # [2.0.0](https://github.com/flagscript/terraform-aws-flagscript-cicd/compare/v1.1.0...v2.0.0) (2026-11-26)
 
 ### Features
